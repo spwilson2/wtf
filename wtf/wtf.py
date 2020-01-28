@@ -11,84 +11,95 @@ import re
 
 #############################
 # Script utilities
-
-# ABC for subcommands
 class Subcommand(object):
+    '''
+    ABC for subcommands
+    '''
     name = None
+
+    # A sentinal object used by subcommands to check if no argument was
+    # provided.
+    _sentinel = object()
 
     def init_parser(self, subparser):
         raise NotImplementedError
 
-    def process_args(self, parser, args):
-        raise NotImplementedError
+    def post_process_args(self, parser, args):
+        # Set defaults if none-provided
+        self.args = args
 
     def run(self, multi):
         raise NotImplementedError
 
+    @classmethod
+    def parse_args(cls, argv):
+        parser = argparse.ArgumentParser()
+        cls.init_common_parser(parser)
 
-def parse_args(argv):
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest='command')
-    subparsers.required = True
+        subparsers = parser.add_subparsers(dest='command')
+        subparsers.required = True
 
-    subcommands = Subcommand.__subclasses__()
+        subcommands = cls.__subclasses__()
 
-    # Instantiate subcommand objects from their class,
-    # assign them their name used by the parser
-    # (sc -> subcommand)
-    commands = {}
-    for sc in subcommands:
-        assert sc.name is not None, ('Subclass %s name not set in class'
-            'definition' % str(sc))
-        assert sc.name not in commands, 'Multiple commands with the same name'
-        commands[sc.name] = sc()
+        # Instantiate subcommand objects from their class,
+        # assign them their name used by the parser
+        # (sc -> subcommand)
+        commands = {}
+        for sc in subcommands:
+            assert sc.name is not None, ('Subclass %s name not set in class'
+                'definition' % str(sc))
+            assert sc.name not in commands, 'Multiple commands with the same name'
+            commands[sc.name] = sc()
 
-    # Initialize all subparsers
-    for name, sc in commands.items():
-        subparser = subparsers.add_parser(name, help=sc.__doc__)
-        sc.init_parser(subparser)
+        # Initialize all subparsers
+        for name, sc in commands.items():
+            subparser = subparsers.add_parser(name, help=sc.__doc__)
+            sc.init_parser(subparser)
 
-    # Parse arguments and get subcommand
-    options = parser.parse_args(argv)
-    sc = commands[options.command]
-    sc.post_process_args(parser, options)
-    return sc
+        # Parse arguments and get subcommand
+        options = parser.parse_args(argv)
+        sc = commands[options.command]
+        sc.post_process_args(parser, options)
+        return sc
+
+    @classmethod
+    def init_common_parser(cls, parser):
+        '''
+        Initialize common arguments for all subcommands.
+        '''
+        pass
+
 
 # Script utilities
 #############################
 
+def setup():
+    # Setup Logging
+    pass
+
+# TODO Logging framework 
+# - Save output of python tests? 
+# - Save output of spawned processes
+#
+# - Enable tests to access output of spawned processes
+
+# TODO Sandbox tests
+# - Failed tests should not take down the test runner
+#  -> Use clone (not multiprocessing)
+
 class RunSubcommand(Subcommand):
     name = 'run'
     def __init__(self):
-        self._sentinel = object()
+        pass
 
     def init_parser(self, subparser):
         # Default = os.getcwd()
-        #subparser.add_argument('path', default=None, required=False)
+        # subparser.add_argument('path', default=self._sentinel, required=False)
         pass
 
-    def post_process_args(self, parser, args):
-        # Set defaults if none-provided
-
-        if args.rtos_path is self._sentinel:
-            args.rtos_path = os.path.abspath(os.path.join(args.bsp_path, ".."))
-
-        if args.flash_script is self._sentinel:
-            args.flash_script = GET_DEFAULT_FLASH_SCRIPT_PATH(args.bsp_path)
-
-        # Verify that the given bootloader_dir is correct
-        search_paths = [args.rtos_path, args.bsp_path]
-        binary_path = FindFilePath(search_paths, args.bootloader_dir)
-        check_is_file(binary_path)
-
-        self.args = args
-
-    def run(self, multi):
-        cmds = get_rcar_uboot_flash_commands(
-                self.args.flash_script, self.args.bootloader_dir)
-
-        for cmd in cmds:
-            multi.run_flash_command(cmd)
+    def run(self):
+        # TODO :
+        # Crawl the test tree, enumerating test object
         return 0
 
 
@@ -96,8 +107,8 @@ class RunSubcommand(Subcommand):
 # Boilerplate for a standalone importable script
 
 def main(argv):
-    command = parse_args(argv)
-    command.run(multi)
+    command = Subcommand.parse_args(argv)
+    command.run()
     return 0
 
 
